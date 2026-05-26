@@ -6,6 +6,9 @@ python generateData.py
 ```aiignore
 python trainModels.py
 ```
+```aiignore
+streamlit run tryOutModels.py
+```
 
 ```aiignore
 outputs/
