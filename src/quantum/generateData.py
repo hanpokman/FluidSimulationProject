@@ -1,144 +1,116 @@
 import numpy as np
-import matplotlib.pyplot as plt
-from scipy.ndimage import gaussian_filter
 import os
-from datetime import datetime
 
 
-def generate_cylinder_wake_data(grid_size=64, num_snapshots=1000, save_dir='fluid_data'):
-    """
-    Generate 2D flow around cylinder (von Kármán vortex street) data
-    Returns: velocity field snapshots (u, v) and vorticity
-    """
-    print(f"Generating {num_snapshots} fluid dynamics snapshots...")
-
-    # Create save directory
+def generate_fluid_data(n_samples=2000, grid_size=64, save_dir='quantum_fluid_data'):
+    """Generate synthetic fluid flow data for 64x64 grid"""
     os.makedirs(save_dir, exist_ok=True)
 
-    # Grid setup
-    x = np.linspace(-2, 4, grid_size)
-    y = np.linspace(-1.5, 1.5, grid_size)
-    X, Y = np.meshgrid(x, y)
+    u_fields = []
+    v_fields = []
 
-    # Cylinder parameters (center at origin)
-    cylinder_radius = 0.3
+    for i in range(n_samples):
+        # Create coordinate grid
+        x = np.linspace(-2, 4, grid_size)
+        y = np.linspace(-1.5, 1.5, grid_size)
+        X, Y = np.meshgrid(x, y)
 
-    # Flow parameters
-    U_inf = 1.0  # Free stream velocity
-    vortex_shedding_freq = 0.2  # Strouhal number effect
+        # Random flow type
+        flow_type = np.random.choice(['vortex_pair', 'shear_vortex', 'cylinder_wake'])
 
-    # Storage arrays
-    u_snapshots = []
-    v_snapshots = []
-    vorticity_snapshots = []
+        if flow_type == 'vortex_pair':
+            # Counter-rotating vortex pair
+            strength = np.random.uniform(0.8, 1.5)
+            offset = np.random.uniform(-0.5, 0.5)
 
-    for t_idx in range(num_snapshots):
-        t = t_idx * 0.1  # Time step
+            r1 = np.sqrt((X + 1) ** 2 + (Y - offset) ** 2) + 0.1
+            u1 = -strength * (Y - offset) / r1 ** 2
+            v1 = strength * (X + 1) / r1 ** 2
 
-        # Base potential flow + vortex shedding
-        # Distance from cylinder
-        r = np.sqrt(X ** 2 + Y ** 2)
-        theta = np.arctan2(Y, X)
+            r2 = np.sqrt((X - 1) ** 2 + (Y + offset) ** 2) + 0.1
+            u2 = strength * (Y + offset) / r2 ** 2
+            v2 = -strength * (X - 1) / r2 ** 2
 
-        # Avoid division by zero inside cylinder
-        r_safe = np.maximum(r, cylinder_radius)
+            u = u1 + u2
+            v = v1 + v2
 
-        # Potential flow around cylinder
-        ur_potential = U_inf * (1 - cylinder_radius ** 2 / r_safe ** 2) * np.cos(theta)
-        utheta_potential = -U_inf * (1 + cylinder_radius ** 2 / r_safe ** 2) * np.sin(theta)
+        elif flow_type == 'shear_vortex':
+            # Shear flow with embedded vortex
+            shear_rate = np.random.uniform(0.01, 0.08)
+            u = 1.0 + shear_rate * Y
+            v = np.zeros_like(X)
 
-        # Convert to Cartesian
-        u_potential = ur_potential * np.cos(theta) - utheta_potential * np.sin(theta)
-        v_potential = ur_potential * np.sin(theta) + utheta_potential * np.cos(theta)
+            vortex_x = np.random.uniform(0, 2)
+            vortex_y = np.random.uniform(-0.8, 0.8)
+            strength = np.random.uniform(0.3, 0.8)
 
-        # Add von Kármán vortex street (alternating vortices)
-        vortex_strength = 0.5 * np.sin(2 * np.pi * vortex_shedding_freq * t)
+            r_vort = np.sqrt((X - vortex_x) ** 2 + (Y - vortex_y) ** 2) + 0.1
+            u += -strength * (Y - vortex_y) / r_vort ** 2
+            v += strength * (X - vortex_x) / r_vort ** 2
 
-        # Vortex positions (alternating)
-        vortex_x = np.array([1.0, 2.0, 3.0])
-        vortex_y = np.array([0.5, -0.5, 0.5]) * np.sin(2 * np.pi * vortex_shedding_freq * t)
+        else:  # cylinder_wake
+            # Flow past cylinder with vortex shedding
+            U_inf = 1.0
+            radius = 0.3
 
-        u_vortex = np.zeros_like(X)
-        v_vortex = np.zeros_like(Y)
+            r = np.sqrt(X ** 2 + Y ** 2)
+            theta = np.arctan2(Y, X)
+            r_safe = np.maximum(r, radius)
 
-        for vx, vy in zip(vortex_x, vortex_y):
-            # Vortex-induced velocity (Rankine vortex model)
-            r_vortex = np.sqrt((X - vx) ** 2 + (Y - vy) ** 2) + 0.1
-            u_vortex += -vortex_strength * (Y - vy) / r_vortex ** 2
-            v_vortex += vortex_strength * (X - vx) / r_vortex ** 2
+            ur = U_inf * (1 - radius ** 2 / r_safe ** 2) * np.cos(theta)
+            utheta = -U_inf * (1 + radius ** 2 / r_safe ** 2) * np.sin(theta)
 
-        # Combine flows
-        u = u_potential + u_vortex
-        v = v_potential + v_vortex
+            u = ur * np.cos(theta) - utheta * np.sin(theta)
+            v = ur * np.sin(theta) + utheta * np.cos(theta)
 
-        # Apply mask for cylinder interior (zero velocity inside cylinder)
-        inside_cylinder = r < cylinder_radius
-        u[inside_cylinder] = 0
-        v[inside_cylinder] = 0
+            # Add shedding vortices
+            strength = np.random.uniform(0.2, 0.5)
+            phase = np.random.uniform(0, 2 * np.pi)
 
-        # Add small random perturbations for realism
-        noise = np.random.randn(grid_size, grid_size) * 0.01
-        u += noise
-        v += noise
+            vortex_positions = [(1.2, 0.5), (2.0, -0.5), (2.8, 0.5)]
+            for x_pos, y_pos in vortex_positions:
+                r_vort = np.sqrt((X - x_pos) ** 2 + (Y - y_pos) ** 2) + 0.1
+                u += -strength * np.sin(phase) * (Y - y_pos) / r_vort ** 2
+                v += strength * np.cos(phase) * (X - x_pos) / r_vort ** 2
 
-        # Apply slight smoothing for physical realism
-        u = gaussian_filter(u, sigma=0.5)
-        v = gaussian_filter(v, sigma=0.5)
+            # Mask cylinder interior
+            mask = r < radius
+            u[mask] = 0
+            v[mask] = 0
 
-        # Compute vorticity
-        vorticity = np.gradient(v, axis=0) - np.gradient(u, axis=1)
-
-        u_snapshots.append(u)
-        v_snapshots.append(v)
-        vorticity_snapshots.append(vorticity)
-
-        # Progress indicator
-        if (t_idx + 1) % 100 == 0:
-            print(f"Generated {t_idx + 1}/{num_snapshots} snapshots")
+        u_fields.append(u)
+        v_fields.append(v)
 
     # Convert to numpy arrays
-    u_snapshots = np.array(u_snapshots)
-    v_snapshots = np.array(v_snapshots)
-    vorticity_snapshots = np.array(vorticity_snapshots)
+    u_fields = np.array(u_fields)
+    v_fields = np.array(v_fields)
 
-    # Save data
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    np.savez(os.path.join(save_dir, f'fluid_data_{timestamp}.npz'),
-             u=u_snapshots, v=v_snapshots, vorticity=vorticity_snapshots,
-             grid_size=grid_size, num_snapshots=num_snapshots)
+    # Normalize to [-1, 1] range
+    global_min_u = np.min(u_fields)
+    global_max_u = np.max(u_fields)
+    global_min_v = np.min(v_fields)
+    global_max_v = np.max(v_fields)
 
-    # Save a few visualization examples (use 4 snapshots for 2x2 grid)
-    fig, axes = plt.subplots(2, 4, figsize=(16, 8))
-    time_indices = [0, num_snapshots // 4, num_snapshots // 2, 3 * num_snapshots // 4]
+    u_normalized = 2 * (u_fields - global_min_u) / (global_max_u - global_min_u + 1e-8) - 1
+    v_normalized = 2 * (v_fields - global_min_v) / (global_max_v - global_min_v + 1e-8) - 1
 
-    for idx, t_idx in enumerate(time_indices):
-        # Velocity magnitude
-        mag = np.sqrt(u_snapshots[t_idx] ** 2 + v_snapshots[t_idx] ** 2)
-        im1 = axes[0, idx].contourf(X, Y, mag, levels=20, cmap='viridis')
-        axes[0, idx].set_title(f'Velocity at t={t_idx * 0.1:.1f}')
-        axes[0, idx].set_aspect('equal')
-        plt.colorbar(im1, ax=axes[0, idx])
+    # Stack channels
+    data = np.stack([u_normalized, v_normalized], axis=1)
 
-        # Vorticity
-        im2 = axes[1, idx].contourf(X, Y, vorticity_snapshots[t_idx], levels=20, cmap='RdBu_r')
-        axes[1, idx].set_title(f'Vorticity at t={t_idx * 0.1:.1f}')
-        axes[1, idx].set_aspect('equal')
-        plt.colorbar(im2, ax=axes[1, idx])
+    # Save
+    save_path = os.path.join(save_dir, 'quantum_fluid_data.npz')
+    np.savez(save_path,
+             data=data,
+             u_min=global_min_u, u_max=global_max_u,
+             v_min=global_min_v, v_max=global_max_v)
 
-    plt.suptitle('Fluid Flow Snapshots (Cylinder Wake)', fontsize=16)
-    plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, f'sample_visualizations_{timestamp}.png'), dpi=150)
-    plt.show()
+    print(f"Generated {n_samples} samples, shape: {data.shape}")
+    print(f"U range: [{global_min_u:.3f}, {global_max_u:.3f}]")
+    print(f"V range: [{global_min_v:.3f}, {global_max_v:.3f}]")
+    print(f"Saved to {save_path}")
 
-    print(f"\nData saved to {save_dir}/fluid_data_{timestamp}.npz")
-    print(f"Data shape - u: {u_snapshots.shape}, v: {v_snapshots.shape}, vorticity: {vorticity_snapshots.shape}")
-
-    return u_snapshots, v_snapshots, vorticity_snapshots
+    return save_path, data
 
 
 if __name__ == "__main__":
-    # Generate dataset
-    u, v, vorticity = generate_cylinder_wake_data(grid_size=64, num_snapshots=1000)
-
-    print("\nDataset generation complete!")
-    print(f"Data ranges - u: [{u.min():.3f}, {u.max():.3f}], v: [{v.min():.3f}, {v.max():.3f}]")
+    generate_fluid_data(n_samples=2000, grid_size=64)
